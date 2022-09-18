@@ -42,6 +42,10 @@
   display: none;
 }
 
+.background_red {
+  background-color: #f6484a;
+}
+
 .main-chat-window {
   overflow-y: scroll;
 }
