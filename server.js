@@ -1,39 +1,86 @@
-const express = require("express");
-const app = express();
-const server = require("http").Server(app);
-app.set("view engine", "ejs");
-app.use(express.static("public"));
+const socket = io("/");
 
-const { v4: uuidv4 } = require("uuid");
-
-const io = require("socket.io")(server, {
-    cors: {
-        origin: '*'
-    }
+var peer = new Peer(undefined, {
+    path: "/peerjs",
+    host: "/",
+    port: "443",
 });
 
-const { ExpressPeerServer } = require("peer");
-const peerServer = ExpressPeerServer(server, {
-    debug: true,
-});
+const user = prompt("Enter your name");
+const myVideo = document.createElement("video");
+myVideo.muted = true;
+let myStream;
 
-app.use("/peerjs", peerServer);
-
-app.get("/", (req, res) => {
-    res.redirect(`/${uuidv4()}`);
-});
-
-app.get("/:room", (req, res) => {
-    res.render("index", { roomId: req.params.room });
-});
-
-io.on("connection", (socket) => {
-    socket.on("join-room", (roomId, userId, userName) => {
-        socket.join(roomId);
-        socket.on("message", (message) => {
-            io.to(roomId).emit("createMessage", message, userName);
-        });
+navigator.mediaDevices.getUserMedia({audio: true, video: true}).then((stream)=>{
+    myStream = stream;
+    addVideoStream(myVideo, stream);
+    socket.on("user-connected",(userId)=>{
+        connectToNewUser(userId,stream);
     });
+
+    peer.on("call",(call)=>{
+        call.answer(stream);
+        const video = document.createElement("media");
+        call.on("stream",(userVideoStream)=>{
+            addVideoStream(video.userVideoStream);
+        })
+    })
+})
+
+function connectToNewUser(userId,stream){
+    const call = peer.call(userId,stream);
+    const video = document.createElement("video");
+    call.on("stream",(userVideoStream)=>{
+        addVideoStream(video.userVideoStream);
+    })
+}
+
+function addVideoStream(video,stream){
+    video.srcObject = stream;
+    video.addEventListener("loadedmetadata", ()=>{
+        video.play();
+        $("#video_grid").append(video)
+    });
+}
+
+$(function () {
+    $("#show_chat").click(function () {
+        $(".left-window").css("display", "none")
+        $(".right-window").css("display", "block")
+        $(".header_back").css("display", "block")
+    })
+    $(".header_back").click(function () {
+        $(".left-window").css("display", "block")
+        $(".right-window").css("display", "none")
+        $(".header_back").css("display", "none")
+    })
+
+    $("#send").click(function () {
+        if ($("#chat_message").val().length !== 0) {
+            socket.emit("message", $("#chat_message").val());
+            $("#chat_message").val("");
+        }
+    })
+
+    $("#chat_message").keydown(function (e) {
+        if (e.key == "Enter" && $("#chat_message").val().length !== 0) {
+            socket.emit("message", $("#chat_message").val());
+            $("#chat_message").val("");
+        }
+    })
+
+})
+
+peer.on("open", (id) => {
+    socket.emit("join-room", ROOM_ID, id, user);
 });
 
-server.listen(process.env.PORT || 3030);
+socket.on("createMessage", (message, userName) => {
+    $(".messages").append(`
+        <div class="message">
+            <b><i class="far fa-user-circle"></i> <span> ${userName === user ? "me" : userName
+        }</span> </b>
+            <span>${message}</span>
+        </div>
+    `)
+});
